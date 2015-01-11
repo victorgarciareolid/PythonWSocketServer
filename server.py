@@ -53,56 +53,55 @@ s.bind((Host, Port))
 s.listen(5)  # How many clients we are expecting to listen?
 print('Set up ready! Serving in:  \n' + 'HOST: ' + Host + '\nPORT: ' + str(Port))
 # Decode the rawData that come from the client
-def toHexString(num):
-    return chr(num)
-def decoded_s(rawData):
+def decoding(rawData):
+    print(rawData)
     if rawData:
         print('DECODING')
         # Append each byte sorted by their position. This make us work easier because we can modify every byte easily
         a = 0
+        result = ''
         mask = 0
         length = 0
         decodedData = []  # It stores the contents of the unmasked data
         length = rawData[1] and 128  # Filtering the data to get the length of the length stream
         if length == 126:
-            a = 2  # How long is the length stream?
+            a = 3  # How long is the length stream?
             mask = rawData[3:7]
         elif length == 127:
-            a = 8  # How long is the length stream?
+            a = 9  # How long is the length stream?
             mask = rawData[9:13]
         else:  # If the length is not 127 nor 126 the length stream is 1 byte
-            a = 1  # How long is the length stream?
+            a = 2  # How long is the length stream?
             mask = rawData[2:6]
-        a += 1  # Adding the first byte of the stream (data type byte is always in the data's stream)
-        for i in range(len(rawData) - a):  # Loop between all the elements of the masked data (below mask bytes)
+        for i in range(4 ,len(rawData) - a):  # Loop between all the elements of the masked data (below mask bytes)
             decodedData.append(rawData[i+a] ^ mask[i % 4])  # Unmask every data
         for i in range(0, len(decodedData)):
-            decodedData[i] = chr(decodedData[i])
-        print('Decoding has succesfully complete\n')
-        return decodedData
+            result += chr(decodedData[i])
+        print('Decoding has succesfully completed')
+        return result
     else:
         print('Decoding has failed due data is an empty variable')
         return None
+
 def code(rawData):
-    print('CODING')
+    print('CODING:', rawData)
     result = ''
-    mainData = []
     encodedData = []
+
     if rawData:
-        encodedData.append(1)  # 1st Byte (data type, etc)
+        encodedData.append(129)  # 1st Byte (data type, etc)
+
         if type(rawData) == dict:
             rawData = json.dumps(rawData)
         length = len(rawData)  # Raw data's length
-        for i in range(0, length):
-            mainData.append(ord(rawData[i]))
-
         if 0 <= length <= 125:
             encodedData.append(length)
-
+            print(encodedData)
         elif 126 <= length <= 65535:
             encodedData.append(126)
             encodedData.append((length >> 8) and 255)
             encodedData.append(length and 255)
+            print(encodedData)
         else:
             encodedData.append(127)
             encodedData.append((length >> 56) and 255)
@@ -113,44 +112,48 @@ def code(rawData):
             encodedData.append((length >> 16) and 255)
             encodedData.append((length >> 8) and 255)
             encodedData.append(length and 255)
-        for i in mainData:
-            encodedData.append(i)
-        for i in range(len(encodedData)):
-            encodedData[i] = toHexString(encodedData[i])
-        for i in encodedData:
-            result += i
-        print('Coding has failed due data is an empty variable')
+            print(encodedData)
+
+        result = bytes(encodedData) + rawData.encode('utf-8')
+        #for i in range(0, len(encodedData)):
+        #    result += encodedData[i]
+        #    print(result.encode('utf-8'))
+
+        print('Coding has succesfully completed. ', result)
         return result
     else:
         print('Coding has failed due data is an empty variable')
         return None
+
+i = 0
+client, address = s.accept()  # Open a new connection
+print('Connection with: ' + address[0] + ':' + str(address[1]))
+data = client.recv(1024)  # Receive 1024 length data
+if data:
+    key = ''
+o = ''
+data = data.decode('utf-8')
+data = data[data.find('Sec-WebSocket-Key')+19:]  # From Sec-WebSocket-Key begining + 19 ("Sec-WebSockey-Key"'s length') to the end of the line
+
+for i in data:  # Analize every char and if it's \r (line end) it takes the data between Sec-Websocket-key and the first \r
+    if i == '\r':
+        break
+    else:
+        key += i
+key += GUID
+n.update(key.encode('ascii'))  # Encrypt key + Guid in sha1
+o = base64.b64encode(n.digest())  # toBase64
+http_response = http_response.format(o.decode('ascii')) #  replace {0} in the http_response with o (base64(sha1(GUID + Sec-WebSocket-Key)))
+
+client.send(http_response.encode('utf-8'))  # Send http header to the client and get a Switching protocol 101
+print('Switching Protocols 101')
 while True:
-    i = 0
-    datas = []
-    client, address = s.accept()  # Open a new connection
-    print('Connection with: ' + address[0] + ':' + str(address[1]))
-    data = client.recv(1024)  # Receive 1024 length data
-    if data:
-        key = ''
-        o = ''
-        data = data.decode('utf-8')
-        data = data[data.find('Sec-WebSocket-Key')+19:]  # From Sec-WebSocket-Key begining + 19 ("Sec-WebSockey-Key"'s length') to the end of the line
-
-        for i in data:  # Analize every char and if it's \r (line end) it takes the data between Sec-Websocket-key and the first \r
-            if i == '\r':
-                break
-            else:
-                key += i
-        key += GUID
-        n.update(key.encode('ascii'))  # Encrypt key + Guid in sha1
-        o = base64.b64encode(n.digest())  # toBase64
-        http_response = http_response.format(o.decode('ascii')) #  replace {0} in the http_response with o (base64(sha1(GUID + Sec-WebSocket-Key)))
-
-        client.send(http_response.encode('utf-8'))  # Send http header to the client and get a Switching protocol 101
-
         # Testing
-        string_ = client.recv(1024)  # Get value from client
-        decoded_s(string_)  # Decode the raw value
-        time.sleep(1)  # Wait 1 second
-        datas.append(decoded_s(client.recv(1024)))  # Append data recived from client
-        client.send(code('OeroiweropiK').encode('utf-8'))  # Send coded data to client
+        string_ = decoding(client.recv(1024))  # Get value from client
+        print(string_)  # Decode the raw value
+        # print(decoding(client.recv(1024)))  # Append data recived from client
+        # time.sleep(1)  # Wait 1 second
+        client.send(code('hola' + string_))
+        # client.send(code('HOLA' + string_))  # Send coded data to client
+
+s.close()
